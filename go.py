@@ -1,4 +1,6 @@
 import random
+import math
+from copy import deepcopy
 
 def initialize_board(size):
     """Initialize an empty Go board."""
@@ -19,21 +21,42 @@ def switch_player(current_player):
 def is_valid_move(board, x, y, current_player):
     """Check if the move is valid (not out of bounds, not on an occupied space, and not suicidal)."""
     size = len(board)
+
+    # Allow passing
+    if x == -1 and y == -1:
+        return True
+
+    # Check for out of bounds
     if x < 0 or x >= size or y < 0 or y >= size:
         return False
+
+    # Check if the position is already occupied
     if board[x][y] != '.':
         return False
 
-    # Temporarily place the stone to check for liberties
-    board[x][y] = current_player
-    if is_group_captured(board, x, y, current_player):
-        board[x][y] = '.'  # Remove the temporary stone
-        return False
+    # Create a deep copy of the board to simulate the move
+    board_copy = deepcopy(board)
 
-    # Restore the board state
-    board[x][y] = '.'
+    # Check if placing the stone captures any opponent's stones
+    board_copy[x][y] = current_player
+    opponent = 'O' if current_player == 'X' else 'X'
+    captured_any = False
+    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < size and 0 <= ny < size and board_copy[nx][ny] == opponent:
+            if is_group_captured(board_copy, nx, ny, opponent):
+                captured_any = True
+
+    # If capturing any opponent stones, the move is valid
+    if captured_any:
+        return True
+
+    # Check for liberties of the player's own stone
+    if not has_liberties(board_copy, x, y, current_player, set()):
+        return False  # Move is suicidal
+
     return True
-
+    
 def capture_stones(board, x, y, current_player, prisoners):
     """Capture opponent's stones and update the prisoners count."""
     opponent = 'O' if current_player == 'X' else 'X'
@@ -98,30 +121,125 @@ def random_ai_move(board):
         if is_valid_move(board, x, y, 'O'):
             return x, y
 
+def minimax(board, depth, alpha, beta, maximizing_player, prisoners):
+    """Minimax algorithm with alpha-beta pruning."""
+    if depth == 0 or no_valid_moves(board, 'O' if maximizing_player else 'X'):
+        return calculate_score(board, prisoners)['O'] - calculate_score(board, prisoners)['X']
+
+    if maximizing_player:
+        max_eval = -math.inf
+
+        # Consider passing as a valid move
+        if is_valid_move(board, -1, -1, 'O'):  # -1, -1 indicates a pass
+            eval = minimax(board, depth - 1, alpha, beta, False, prisoners)
+            max_eval = max(max_eval, eval)
+
+        for x in range(len(board)):
+            for y in range(len(board)):
+                if is_valid_move(board, x, y, 'O'):
+                    # Create copies of the board and prisoners
+                    board_copy = deepcopy(board)
+                    prisoners_copy = prisoners.copy()
+
+                    # Make the move
+                    board_copy[x][y] = 'O'
+                    capture_stones(board_copy, x, y, 'O', prisoners_copy)
+
+                    # Evaluate
+                    eval = minimax(board_copy, depth - 1, alpha, beta, False, prisoners_copy)
+
+                    max_eval = max(max_eval, eval)
+                    alpha = max(alpha, eval)
+                    if beta <= alpha:
+                        break
+        return max_eval
+
+    else:
+        min_eval = math.inf
+
+        # Consider passing as a valid move
+        if is_valid_move(board, -1, -1, 'X'):  # -1, -1 indicates a pass
+            eval = minimax(board, depth - 1, alpha, beta, True, prisoners)
+            min_eval = min(min_eval, eval)
+
+        for x in range(len(board)):
+            for y in range(len(board)):
+                if is_valid_move(board, x, y, 'X'):
+                    # Create copies of the board and prisoners
+                    board_copy = deepcopy(board)
+                    prisoners_copy = prisoners.copy()
+
+                    # Make the move
+                    board_copy[x][y] = 'X'
+                    capture_stones(board_copy, x, y, 'X', prisoners_copy)
+
+                    # Evaluate
+                    eval = minimax(board_copy, depth - 1, alpha, beta, True, prisoners_copy)
+
+                    min_eval = min(min_eval, eval)
+                    beta = min(beta, eval)
+                    if beta <= alpha:
+                        break
+        return min_eval
+
+def minimax_ai_move(board, prisoners, depth=3):
+    """Generate the best move for the AI using the Minimax algorithm."""
+    best_move = None
+    best_value = -math.inf
+
+    # Consider passing as a valid move
+    if is_valid_move(board, -1, -1, 'O'):  # -1, -1 indicates a pass
+        move_value = minimax(board, depth - 1, -math.inf, math.inf, False, prisoners)
+        best_value = move_value
+        best_move = 'pass'
+    
+    for x in range(len(board)):
+        for y in range(len(board)):
+            if is_valid_move(board, x, y, 'O'):
+                # Create copies of the board and prisoners
+                board_copy = deepcopy(board)
+                prisoners_copy = prisoners.copy()
+
+                # Make the move
+                board_copy[x][y] = 'O'
+                capture_stones(board_copy, x, y, 'O', prisoners_copy)
+
+                # Evaluate
+                move_value = minimax(board_copy, depth - 1, -math.inf, math.inf, False, prisoners_copy)
+
+                if move_value > best_value:
+                    best_value = move_value
+                    best_move = (x, y)
+
+    return best_move if best_move is not None else 'pass'
+
 def count_empty_areas(board, player):
     size = len(board)
     visited = set()
     score = 0
 
     def dfs(x, y):
-        nonlocal surrounded
+        """Depth-first search to explore empty areas and check if they are surrounded."""
         if x < 0 or x >= size or y < 0 or y >= size or (x, y) in visited:
-            return
+            return True  # Out of bounds or already visited
         if board[x][y] == '.':
             visited.add((x, y))
+            surrounded = True
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                dfs(x + dx, y + dy)
+                if not dfs(x + dx, y + dy):
+                    surrounded = False  # If we hit a boundary or an opponent stone
+            return surrounded  # Return if the area is still surrounded
         else:
-            if board[x][y] == player:
-                surrounded = True
+            # If we encounter a stone that is not the player's, it's not surrounded
+            return board[x][y] == player
 
+    # Iterate through the board to find empty spaces
     for x in range(size):
         for y in range(size):
             if board[x][y] == '.' and (x, y) not in visited:
-                surrounded = False
-                dfs(x, y)
-                if surrounded:
-                    score += 1  # Count this area as a point
+                # Start DFS to determine if this area is surrounded
+                if dfs(x, y):
+                    score += 1  # Count this area as a point if it's surrounded
 
     return score
 
@@ -166,7 +284,7 @@ def play_game(size=9):
                     print("Invalid input! Please enter row and column numbers or 'pass'.")
                     continue
         else:
-            move = random_ai_move(board)
+            move = minimax_ai_move(board, prisoners)
             if move != 'pass':
                 x, y = move
                 print(f"AI {current_player} plays at ({x}, {y})")
