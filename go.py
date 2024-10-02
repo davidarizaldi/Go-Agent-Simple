@@ -131,7 +131,7 @@ def minimax(board, depth, alpha, beta, maximizing_player, prisoners):
 
         # Consider passing as a valid move
         if is_valid_move(board, -1, -1, 'O'):  # -1, -1 indicates a pass
-            eval = minimax(board, depth - 1, alpha, beta, False, prisoners)
+            eval = minimax(board, depth - 1, alpha, beta, False, prisoners) - 0.5
             max_eval = max(max_eval, eval)
 
         for x in range(len(board)):
@@ -159,7 +159,7 @@ def minimax(board, depth, alpha, beta, maximizing_player, prisoners):
 
         # Consider passing as a valid move
         if is_valid_move(board, -1, -1, 'X'):  # -1, -1 indicates a pass
-            eval = minimax(board, depth - 1, alpha, beta, True, prisoners)
+            eval = minimax(board, depth - 1, alpha, beta, True, prisoners) - 0.5
             min_eval = min(min_eval, eval)
 
         for x in range(len(board)):
@@ -189,7 +189,7 @@ def minimax_ai_move(board, prisoners, depth=3):
 
     # Consider passing as a valid move
     if is_valid_move(board, -1, -1, 'O'):  # -1, -1 indicates a pass
-        move_value = minimax(board, depth - 1, -math.inf, math.inf, False, prisoners)
+        move_value = minimax(board, depth - 1, -math.inf, math.inf, False, prisoners) - 0.5
         best_value = move_value
         best_move = 'pass'
     
